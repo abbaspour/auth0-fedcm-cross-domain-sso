@@ -1,0 +1,143 @@
+@startuml fedcm-sequence
+title FedCM cross-site SSO with Auth0: RP app (other site) <-> Auth0 custom domain + FedCM Worker (IdP site)
+
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 260
+skinparam BoxPadding 10
+autonumber "<b>[0]"
+
+actor "User" as U
+participant "Browser\n(Chrome, FedCM)" as B
+box "RP site: fedcm-app.slipbox.uk" #EEF6FF
+  participant "RP app (SPA)\nvanilla JS +\nauth0-spa-js" as SPA
+end box
+box "IdP site: abbaspour.net (Cloudflare zone)" #FFF4E5
+  participant "Login app (SPA)\nfedcm-app.abbaspour.net\nsame site as IdP" as LA
+  participant "web-identity Worker\nabbaspour.net\n/.well-known/web-identity" as WK
+  participant "idp Worker\nfedcm-id.abbaspour.net\nAuth0 proxy + FedCM IdP" as W
+end box
+box "Auth0" #F0F0F0
+  participant "Auth0 tenant\n(self-managed\ncustom domain origin)" as A0
+end box
+
+note over W, A0
+  Every Worker -> Auth0 request goes to the self-managed custom domain origin with
+  <b>cname-api-key</b>, <b>true-client-ip</b> (end-user IP), User-Agent and the browser's
+  Auth0 cookies (<b>auth0</b>, <b>did</b>) forwarded as-is.
+  The Worker is stateless: the Auth0 session is the only source of truth.
+end note
+
+== Phase 0: user logs in on the same-site Login app (classic redirect, no FedCM) ==
+
+U -> B : open https://fedcm-app.abbaspour.net/
+B -> LA : load app (auth0-spa-js, mode = redirect)
+U -> LA : click "Log in (redirect)"
+LA -> B : loginWithRedirect()
+B -> W : GET /authorize?client_id=<b>LOGIN_APP</b>&redirect_uri=https://fedcm-app.abbaspour.net/&code_challenge=...
+W -> A0 : proxy
+A0 --> W : Universal Login pages
+W --> B : proxy
+U -> B : enter credentials
+B -> W : POST /u/login ...
+W -> A0 : proxy
+A0 --> W : 302 /authorize/resume  Set-Cookie: auth0=<session>; SameSite=None; Secure
+W --> B : proxy
+B -> W : GET /authorize/resume ...
+W -> A0 : proxy
+A0 --> W : 302 https://fedcm-app.abbaspour.net/?code=...&state=...
+W --> B : proxy + inject <b>Set-Login: logged-in</b>\n(an Auth0 redirect carrying ?code= means a live session)
+B -> B : IdP login status = logged-in
+B -> LA : /?code=...&state=...
+LA -> W : POST /oauth/token (PKCE) -> proxy -> Auth0
+LA -> U : signed in; links to the RP app
+
+== Phase 1: RP app on another site asks for a FedCM credential ==
+
+U -> B : open https://fedcm-app.slipbox.uk/
+B -> SPA : load index.html, app.js, auth0-spa-js (domain = fedcm-id.abbaspour.net)
+SPA -> SPA : 'IdentityCredential' in window ?\n(no -> only the redirect "Log in" button)
+SPA -> SPA : auth0.loginWithRedirect({ openUrl(url) {...} })\nSDK generates state, nonce, PKCE verifier/challenge,\nstores its transaction and hands back the\n/authorize URL instead of navigating
+SPA -> B : navigator.credentials.get({\n  mediation: 'optional',\n  identity: { mode: 'passive', providers: [{\n    configURL: 'https://fedcm-id.abbaspour.net/fedcm/config.json',\n    clientId: <RP client_id>,\n    params: { redirect_uri, scope, audience, state, nonce,\n              code_challenge, code_challenge_method }\n  }]}})
+
+== Phase 2: browser talks to the IdP (IdP does not learn the RP yet) ==
+
+B -> WK : GET https://abbaspour.net/.well-known/web-identity (no cookies)
+WK --> B : { provider_urls: [".../fedcm/config.json"],\n  accounts_endpoint, login_url }
+B -> W : GET /fedcm/config.json (no cookies)
+W --> B : { accounts_endpoint, id_assertion_endpoint,\n  client_metadata_endpoint, disconnect_endpoint,\n  login_url, branding }
+note right of B : accounts_endpoint and login_url must be identical\nin both files, or the browser aborts
+
+B -> W : GET /fedcm/accounts\nCookie: auth0=...  Sec-Fetch-Dest: webidentity\n(no Origin, no client_id)
+W -> A0 : GET /authorize?client_id=<b>BRIDGE</b>&prompt=none&response_type=code\n&redirect_uri=/fedcm/callback  (cookies forwarded, redirect: manual)
+alt Auth0 session exists
+  A0 --> W : 302 /fedcm/callback?code=...
+  W -> A0 : POST /oauth/token (BRIDGE client_secret)
+  A0 --> W : id_token { sub, name, email, picture }
+  W --> B : 200 { accounts: [{ id: sub, name, email, picture,\n  approved_clients: [<demo client_ids>] }] }
+else no session
+  A0 --> W : 302 /fedcm/callback?error=login_required
+  W --> B : 401
+  B --> SPA : reject (no UI in passive mode)
+  SPA -> U : show "Sign in with ... (FedCM)" button\n(active mode, see Alt below)
+end
+
+B -> W : GET /fedcm/client_metadata?client_id=<RP> (no cookies)
+W --> B : { privacy_policy_url, terms_of_service_url }
+
+== Phase 3: browser mediation ==
+
+alt first FedCM sign-in to this RP in this browser
+  B -> U : FedCM dialog "Sign in to fedcm-app.slipbox.uk\nwith abbaspour.net - Continue as Jane"
+  U -> B : click Continue
+else returning user (single account, >10 min since last auto sign-in, no preventSilentAccess)
+  B -> U : toast "Signing you in as Jane..." (zero clicks)
+end
+
+== Phase 4: ID assertion = Auth0 authorization code for the RP's own client ==
+
+B -> W : POST /fedcm/assertion  (credentialed CORS)\nOrigin: https://fedcm-app.slipbox.uk  Cookie: auth0=...\nSec-Fetch-Dest: webidentity\nclient_id=<RP>&account_id=<sub>&is_auto_selected=...&params={...}
+W -> W : Origin allowed for client_id; params.redirect_uri on that Origin;\naccount_id == session sub (bridge lookup as in Phase 2)
+W -> A0 : GET /authorize?client_id=<b><RP></b>&prompt=none&response_type=code\n&redirect_uri&scope&audience&state&nonce&code_challenge (S256)\n(cookies forwarded, redirect: manual)
+A0 --> W : 302 https://fedcm-app.slipbox.uk/?code=XYZ&state=...
+W --> B : 200 { token: "XYZ" }\nAccess-Control-Allow-Origin: https://fedcm-app.slipbox.uk\nAccess-Control-Allow-Credentials: true
+note right of W : on any failure: 200 { error: { code } }\n(unknown Origin: 403 without CORS headers)
+B --> SPA : IdentityCredential { token: "XYZ", isAutoSelected }
+
+== Phase 5: RP finishes a standard Auth0 PKCE code exchange via the SDK ==
+
+SPA -> SPA : auth0.handleRedirectCallback(\n  redirect_uri + '?code=XYZ&state=' + state)
+SPA -> W : POST /oauth/token  (CORS)\ngrant_type=authorization_code, code=XYZ, code_verifier, client_id
+W -> A0 : proxy
+A0 --> W : { id_token, access_token }
+W --> SPA : proxy
+SPA -> SPA : SDK validates id_token\n(iss = https://fedcm-id.abbaspour.net/, aud, nonce) and caches tokens
+SPA -> U : render profile (name, email, picture)
+
+== Alt: logged out at the IdP, user clicks "Sign in with ... (FedCM)" ==
+
+U -> SPA : click button (user activation)
+SPA -> B : navigator.credentials.get({ identity: { mode: 'active', providers: [...same...] } })
+B -> U : pop-up https://fedcm-id.abbaspour.net/fedcm/login (first-party cookies)
+note right of B : /fedcm/login -> Universal Login under the BRIDGE client\n-> /fedcm/callback (Worker redeems code with BRIDGE secret)\n-> page calls navigator.login.setStatus('logged-in');\n   IdentityProvider.close()
+B -> B : pop-up closes, re-fetch /fedcm/accounts
+B -> U : "Continue as Jane"
+note over B, A0 : continue with Phases 3, 4, 5
+
+== Logout ==
+
+alt "Log out of this app"
+  U -> SPA : click
+  SPA -> B : navigator.credentials.preventSilentAccess()
+  SPA -> SPA : auth0.logout({ openUrl: false })\n(local only; Auth0 session kept, no auto sign-in on reload)
+else "Log out everywhere"
+  U -> SPA : click
+  SPA -> B : preventSilentAccess(); auth0.logout({ returnTo })
+  B -> W : GET /v2/logout?client_id=<RP>&returnTo=...
+  W -> A0 : proxy
+  A0 --> W : 302 returnTo (clears auth0 cookie)
+  W --> B : proxy + inject <b>Set-Login: logged-out</b>
+  B -> SPA : back on the RP, logged out (next FedCM call rejects silently)
+end
+
+@enduml

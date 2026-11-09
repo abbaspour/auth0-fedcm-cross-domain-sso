@@ -1,0 +1,24 @@
+# Copy to terraform.auto.tfvars (git-ignored) and fill in.
+
+# auth0: Management API M2M client
+auth0_tf_client_id     = ""
+auth0_tf_client_secret = ""
+# auth0_domain         = "your-tenant.region.auth0.com"
+
+# cloudflare
+cloudflare_email      = ""
+cloudflare_account_id = ""
+cloudflare_api_key    = ""
+
+# demo user
+demo_user_email    = "demo@example.com"
+demo_user_password = "change-me-Str0ng!"
+
+# topology: defaults are the reference deployment; override for your own domains
+# (see "Adapting to your own domains" in README.md for the matching non-Terraform edits)
+# idp_zone       = "example.com"          # eTLD+1 of the IdP; serves /.well-known/web-identity
+# idp_domain     = "id.example.com"       # Auth0 self-managed custom domain
+# login_app_host = "login.example.com"    # same-site login app
+# rp_app_host    = "app.example.net"      # cross-site RP app (different eTLD+1)
+
+# create_apex_record = true   # only if the idp_zone apex has no proxied DNS record yet

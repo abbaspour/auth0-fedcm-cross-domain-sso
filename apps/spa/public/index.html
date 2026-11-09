@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FedCM demo</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1 id="app-name">FedCM demo</h1>
+    <p id="mode"></p>
+    <p>Other app: <a id="other-app" href="#"></a></p>
+  </header>
+
+  <main>
+    <section id="signed-out" hidden>
+      <p>Not signed in.</p>
+      <button id="login-fedcm" hidden>Sign in with abbaspour.net (FedCM)</button>
+      <button id="login-redirect">Log in (redirect)</button>
+    </section>
+
+    <section id="signed-in" hidden>
+      <div class="profile">
+        <img id="avatar" alt="" width="64" height="64">
+        <div>
+          <div id="name"></div>
+          <div id="email"></div>
+        </div>
+      </div>
+      <pre id="claims"></pre>
+      <button id="logout-local">Log out of this app</button>
+      <button id="logout-global">Log out everywhere</button>
+    </section>
+
+    <section>
+      <h2>Event log</h2>
+      <ol id="log"></ol>
+    </section>
+  </main>
+
+  <footer>
+    <p id="privacy">Privacy: demo only, no data is stored by this app.</p>
+    <p id="terms">Terms: provided as-is for testing FedCM.</p>
+  </footer>
+
+  <script src="https://cdn.auth0.com/js/auth0-spa-js/2.30/auth0-spa-js.production.js"></script>
+  <script src="/config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

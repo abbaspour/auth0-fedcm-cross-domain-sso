@@ -1,0 +1,11 @@
+body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #1f2a44; }
+header { border-bottom: 1px solid #ddd; margin-bottom: 1rem; }
+#mode { font-weight: 600; }
+button { font: inherit; padding: .5rem 1rem; margin: .25rem .5rem .25rem 0; cursor: pointer; }
+.profile { display: flex; gap: 1rem; align-items: center; }
+.profile img { border-radius: 50%; }
+#name { font-size: 1.25rem; font-weight: 600; }
+pre { background: #f4f5f7; padding: .75rem; overflow-x: auto; }
+#log { font-family: ui-monospace, monospace; font-size: .85rem; padding-left: 1.5rem; }
+#log li { margin: .2rem 0; word-break: break-all; }
+footer { margin-top: 2rem; font-size: .8rem; color: #666; }

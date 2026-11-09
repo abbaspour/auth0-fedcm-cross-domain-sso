@@ -1,0 +1,13 @@
+name = "fedcm-web-identity"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+workers_dev = false
+
+# FedCM requires the well-known file on the IdP's eTLD+1, not on the IdP subdomain
+routes = [
+  { pattern = "abbaspour.net/.well-known/web-identity", zone_name = "abbaspour.net" },
+]
+
+# Endpoint paths are duplicated in workers/idp/src/fedcm.js (config.json); `make check` verifies they match
+[vars]
+IDP_ORIGIN = "https://fedcm-id.abbaspour.net"

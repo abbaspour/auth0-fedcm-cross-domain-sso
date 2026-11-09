@@ -1,0 +1,16 @@
+name = "fedcm-idp"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+workers_dev = false
+
+# Auth0 self-managed custom domain (reverse proxy) + FedCM IdP endpoints under /fedcm/*.
+# The well-known file on abbaspour.net is served by workers/web-identity.
+routes = [
+  { pattern = "fedcm-id.abbaspour.net/*", zone_name = "abbaspour.net" },
+]
+
+# Non-secret config (Auth0 origin, client IDs) is generated into src/config.generated.js by `make config`.
+# Secrets (set by `make secrets`): CNAME_API_KEY, BRIDGE_CLIENT_SECRET
+
+[observability]
+enabled = true

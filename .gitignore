@@ -1,0 +1,20 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock*
+terraform.tfvars
+*.auto.tfvars
+tfplan
+.wrangler/
+node_modules/
+.dev.vars
+plantuml.jar
+
+# local tooling
+.idea/
+.claude/
+.DS_Store
+
+# generated from terraform outputs by scripts/gen-config.sh
+workers/idp/src/config.generated.js
+apps/spa/public/config.js

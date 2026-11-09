@@ -1,0 +1,18 @@
+# One static codebase, two deployments. public/config.js picks the mode by hostname:
+#   fedcm-app.abbaspour.net -> classic redirect login (same site as the IdP)
+#   fedcm-app.slipbox.uk    -> FedCM sign-in (cross-site)
+name = "fedcm-spa"
+compatibility_date = "2025-10-01"
+
+[assets]
+directory = "./public"
+
+[env.abbaspour]
+name = "fedcm-app-abbaspour"
+workers_dev = false
+routes = [{ pattern = "fedcm-app.abbaspour.net", custom_domain = true }]
+
+[env.slipbox]
+name = "fedcm-app-slipbox"
+workers_dev = false
+routes = [{ pattern = "fedcm-app.slipbox.uk", custom_domain = true }]
