@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  workers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Offline Worker tests (mocked Auth0)
+        run: make test
+      - name: Shell scripts
+        run: shellcheck --severity=error scripts/*.sh
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+      - run: terraform -chdir=tf fmt -check -recursive
+      - run: terraform -chdir=tf init -backend=false -input=false
+      - run: terraform -chdir=tf validate

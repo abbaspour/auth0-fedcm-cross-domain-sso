@@ -32,8 +32,9 @@ on the IdP's site, FedCM on the other site.
 
 ![FedCM sequence diagram](docs/fedcm-sequence.svg)
 
-Source: [`docs/fedcm-sequence.puml`](docs/fedcm-sequence.puml). Run `make diagram` to re-render it. CI fails if
-the committed SVG is stale.
+Source: [`docs/fedcm-sequence.puml`](docs/fedcm-sequence.puml). Run `make diagram` to re-render it after editing the
+source (it rebuilds only when the `.puml` is newer than the SVG), and `make check-diagram` to verify the committed SVG
+matches. Set `PLANTUML="java -jar plantuml.jar"` to use the jar instead of a `plantuml` install.
 
 ### How the RP gets its tokens
 

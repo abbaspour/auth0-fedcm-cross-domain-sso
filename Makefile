@@ -2,6 +2,8 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 
 TF := terraform -chdir=tf
+PLANTUML ?= plantuml
+DIAGRAM := docs/fedcm-sequence
 
 .PHONY: all plan infra config deploy-web-identity deploy-idp secrets deploy-apps deploy check test diagram check-diagram tail
 
@@ -38,11 +40,13 @@ test:
 check:
 	./scripts/check.sh
 
-diagram:
-	plantuml -tsvg docs/fedcm-sequence.puml
+diagram: $(DIAGRAM).svg
+
+$(DIAGRAM).svg: $(DIAGRAM).puml
+	$(PLANTUML) -tsvg $<
 
 check-diagram:
-	./scripts/check-diagram.sh
+	./scripts/check-diagram.sh -p "$(PLANTUML)"
 
 tail:
 	cd workers/idp && wrangler tail --format pretty
