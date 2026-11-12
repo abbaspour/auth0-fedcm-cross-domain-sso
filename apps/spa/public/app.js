@@ -23,9 +23,11 @@ if (!app) {
 
 // Plain constructor rather than createAuth0Client(): the latter runs checkSession() in a
 // hidden iframe, which cannot see IdP cookies cross-site. FedCM replaces it here.
+// localStorage keeps the RP session across reloads, so FedCM runs only when there is none.
 const client = new auth0.Auth0Client({
   domain: idpDomain,
   clientId: app.clientId,
+  cacheLocation: 'localstorage',
   authorizationParams: { redirect_uri: redirectUri, scope: 'openid profile email' },
 });
 
@@ -80,15 +82,15 @@ async function render() {
   $('claims').textContent = JSON.stringify({ iss, aud, sub, iat, exp }, null, 2);
 }
 
-async function logout(everywhere) {
+async function logout(everywhere, preventSilentAccess = true) {
   // Stops FedCM auto-reauthentication until the user explicitly signs in again
-  if (navigator.credentials?.preventSilentAccess) await navigator.credentials.preventSilentAccess();
+  if (preventSilentAccess && navigator.credentials?.preventSilentAccess) await navigator.credentials.preventSilentAccess();
   if (everywhere) {
     await client.logout({ logoutParams: { returnTo: redirectUri } });
     return;
   }
   await client.logout({ openUrl: false });
-  log('Logged out locally (Auth0 session untouched)');
+  log(`Logged out locally (Auth0 session untouched${preventSilentAccess ? '' : ', FedCM silent access kept'})`);
   await render();
 }
 
@@ -104,6 +106,8 @@ async function main() {
   $('login-redirect').onclick = () => client.loginWithRedirect();
   $('login-fedcm').onclick = async () => { await fedcmSignIn('active'); await render(); };
   $('logout-local').onclick = () => logout(false);
+  // For testing: without preventSilentAccess(), the next page load may auto-reauthenticate
+  $('logout-local-keep').onclick = () => logout(false, false);
   $('logout-global').onclick = () => logout(true);
 
   const query = new URLSearchParams(location.search);
@@ -111,6 +115,8 @@ async function main() {
     log('Handling redirect callback');
     await client.handleRedirectCallback();
     history.replaceState({}, '', '/');
+  } else if (await client.isAuthenticated()) {
+    log('Session restored from cache');
   } else if (app.mode === 'redirect') {
     log('checkSession() via same-site iframe');
     await client.checkSession();
