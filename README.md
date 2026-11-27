@@ -85,6 +85,90 @@ The endpoint URLs are deliberately duplicated in both, and browsers reject the s
 - `make test` (offline) catches path drift.
 - `make check` (live, runs at the end of `make deploy`) catches both path and hostname drift.
 
+## When does the browser prompt?
+
+A `navigator.credentials.get()` call ends in one of four ways:
+
+- **Automatic**: the browser signs the user in with only a brief toast. This is *auto-reauthentication*, and the
+  credential has `isAutoSelected: true`.
+- **Interactive**: the browser shows "Continue as …" and waits for a click.
+- **IdP login**: the browser opens the IdP's `login_url` pop-up, then continues as *Interactive*.
+- **No UI**: the promise rejects and the app falls back to its button.
+
+### Decision tree
+
+```mermaid
+flowchart TD
+  A["navigator.credentials.get()"] --> B{"FedCM enabled for this site?"}
+  B -- no --> X1["No UI: rejected, use redirect fallback"]
+  B -- yes --> C{"mode"}
+  C -- active --> D{"IdP session?"}
+  D -- no --> L["IdP login pop-up, then Continue as"]
+  D -- yes --> I["Interactive: Continue as"]
+  C -- passive --> E{"IdP session?"}
+  E -- no --> X2["No UI: rejected"]
+  E -- yes --> F{"mediation = required?"}
+  F -- yes --> I
+  F -- no --> G{"All auto-reauthn conditions hold?"}
+  G -- yes --> AUTO["Automatic: toast, isAutoSelected true"]
+  G -- no --> H{"mediation"}
+  H -- optional --> I
+  H -- silent --> X3["No UI: rejected"]
+```
+
+"IdP session" means two things at once. The browser's login status for the IdP must be `logged-in`, and the accounts
+endpoint must return an account. If the status says logged-in but the accounts endpoint answers 401, the browser shows
+a "confirm sign-in" dialog instead of an account, then resets the status to logged-out.
+
+The **auto-reauthn conditions** are all of the following:
+
+- The user has signed in to this RP with FedCM before in this browser, by clicking "Continue as …".
+- The user has exactly one returning account.
+- The accounts endpoint lists the RP's `client_id` in `approved_clients`.
+- The RP hasn't called `preventSilentAccess()` since that sign-in.
+- The last *automatic* sign-in was more than 10 minutes ago.
+- The user hasn't turned off FedCM, or "Sign in automatically" in `chrome://password-manager/settings`.
+- The user hasn't recently dismissed a FedCM prompt from this RP. The back-off is browser-defined.
+
+### Common cases
+
+All rows are `passive`. An `active` call never signs in automatically: it shows "Continue as …", or the IdP login
+pop-up first if there is no IdP session. "Returning" means the user signed in with FedCM before, has one account, and is
+in `approved_clients`.
+
+| IdP session | `mediation` | Returning user | `preventSilentAccess()` called | Last auto sign-in < 10 min ago | Result                    |
+|-------------|-------------|----------------|--------------------------------|--------------------------------|---------------------------|
+| no          | any         | any            | any                            | any                            | No UI                     |
+| yes         | `optional`  | no (first use) | n/a                            | n/a                            | Interactive               |
+| yes         | `optional`  | yes            | no                             | no                             | **Automatic**             |
+| yes         | `silent`    | yes            | no                             | no                             | **Automatic**             |
+| yes         | `optional`  | yes            | yes                            | any                            | Interactive               |
+| yes         | `silent`    | yes            | yes                            | any                            | No UI                     |
+| yes         | `optional`  | yes            | no                             | yes                            | Interactive               |
+| yes         | `silent`    | yes            | no                             | yes                            | No UI                     |
+| yes         | `required`  | any            | any                            | any                            | Interactive               |
+
+### All factors
+
+| Factor                         | Controlled by        | Effect                                                                              |
+|--------------------------------|----------------------|-------------------------------------------------------------------------------------|
+| `mode`                         | RP                   | `active` (needs a click) never auto-signs-in. Only `passive` can.                   |
+| `mediation`                    | RP                   | `required` never auto. `optional` falls back to the dialog. `silent` falls back to no UI. |
+| IdP login status and session   | IdP and user         | No session means no accounts, so no auto sign-in. `active` mode opens the IdP login. |
+| Previous FedCM sign-in         | User and browser     | The first sign-in always needs a click. Clearing site data resets it.               |
+| `approved_clients`             | IdP                  | The RP must be listed, or the browser treats the user as new to it.                 |
+| Number of accounts             | IdP and user         | More than one account shows a chooser.                                              |
+| `preventSilentAccess()`        | RP, at logout        | Disables auto sign-in until the user signs in explicitly again.                     |
+| 10-minute window               | Browser              | Counted from the last **automatic** sign-in, not from the last visit to the IdP. It stops a logout from looping straight back in. |
+| Browser and user settings      | User                 | FedCM off for the site, or "Sign in automatically" off, disables it.                |
+| Dismissal back-off             | Browser              | After the user closes the dialog, later prompts are suppressed for a while.         |
+
+The demo always passes `mediation: 'optional'`. It calls `mode: 'passive'` on page load and `mode: 'active'` from the
+button. The `silent` and `required` rows come from the [spec](https://w3c-fedid.github.io/FedCM/) and
+[Chrome's guide](https://developer.chrome.com/docs/identity/fedcm/implement/relying-party#auto-reauthenticate_users_after_the_initial_authentication),
+not from the demo. *Log out of this app* calls `preventSilentAccess()`. *Log out of this app (keep FedCM silent
+access)* doesn't, so after it a reload can sign in automatically, once the 10-minute window has passed.
+
 ## Prerequisites
 
 - An Auth0 tenant on a plan that includes **custom domains with self-managed certificates**.
@@ -143,7 +227,8 @@ Use Chrome with third-party cookies blocked, and keep each app's event log visib
 2. **SSO:** click **Log out everywhere**, log in on the Login app (classic redirect), then open the RP app. The first
    FedCM sign-in shows a "Continue as …" dialog, then the profile.
 3. **Seamless return:** reload the RP app at least 10 minutes after the last automatic sign-in. The browser signs you
-   in with only a toast, and the event log shows `isAutoSelected: true`.
+   in with only a toast, and the event log shows `isAutoSelected: true`. See
+   [When does the browser prompt?](#when-does-the-browser-prompt) for the other cases.
 4. **Logout:**
    - *Log out of this app* calls `preventSilentAccess()`, so a reload doesn't sign you back in automatically.
    - *Log out everywhere* ends the Auth0 session, so the next FedCM call gets a 401.
